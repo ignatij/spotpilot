@@ -1,0 +1,186 @@
+package app_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/ignatij/spotpilot/internal/app"
+	"github.com/ignatij/spotpilot/internal/domain"
+)
+
+// --- fakes ---
+
+type fakeStore struct {
+	session *app.Session
+	saved   *app.Session
+	cleared bool
+}
+
+func (f *fakeStore) Load(_ context.Context) (*app.Session, error) { return f.session, nil }
+func (f *fakeStore) Save(_ context.Context, s *app.Session) error { f.saved = s; return nil }
+func (f *fakeStore) Clear(_ context.Context) error                { f.cleared = true; return nil }
+
+type fakeLoginPerformer struct {
+	session *app.Session
+	err     error
+}
+
+func (f *fakeLoginPerformer) PerformLogin(_ context.Context) (*app.Session, error) {
+	return f.session, f.err
+}
+
+type fakeSpotify struct {
+	searchResult *domain.MatchResult
+	devices      []domain.Device
+	playback     *domain.CurrentPlayback
+}
+
+func (f *fakeSpotify) Search(_ context.Context, _ string) (*domain.MatchResult, error) {
+	return f.searchResult, nil
+}
+func (f *fakeSpotify) Play(_ context.Context, _ string, _ string) error { return nil }
+func (f *fakeSpotify) Pause(_ context.Context, _ string) error          { return nil }
+func (f *fakeSpotify) Resume(_ context.Context, _ string) error         { return nil }
+func (f *fakeSpotify) Next(_ context.Context, _ string) error           { return nil }
+func (f *fakeSpotify) Previous(_ context.Context, _ string) error       { return nil }
+func (f *fakeSpotify) CurrentPlayback(_ context.Context) (*domain.CurrentPlayback, error) {
+	return f.playback, nil
+}
+func (f *fakeSpotify) ListDevices(_ context.Context) ([]domain.Device, error) {
+	return f.devices, nil
+}
+
+type fakeDeviceDetector struct {
+	device *domain.Device
+	err    error
+}
+
+func (f *fakeDeviceDetector) WaitForLocalDevice(_ context.Context) (*domain.Device, error) {
+	return f.device, f.err
+}
+
+type fakeAppLauncher struct{}
+
+func (f *fakeAppLauncher) LaunchSpotify(_ context.Context) error { return nil }
+
+type fakeBrowserLauncher struct{}
+
+func (f *fakeBrowserLauncher) LaunchLogin(_ context.Context, _ string) error { return nil }
+func (f *fakeBrowserLauncher) LaunchURL(_ context.Context, _ string) error   { return nil }
+
+// --- tests ---
+
+func TestLogin_AlreadyLoggedIn(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	performer := &fakeLoginPerformer{}
+	uc := app.NewLogin(store, performer)
+
+	res, err := uc.Run(context.Background(), app.LoginInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.AlreadyLoggedIn {
+		t.Error("expected AlreadyLoggedIn=true when session exists")
+	}
+}
+
+func TestLogin_NoSession_CallsPerformer(t *testing.T) {
+	store := &fakeStore{session: nil}
+	newSess := &app.Session{Cookies: []app.Cookie{{Name: "sp_dc", Value: "tok"}}}
+	performer := &fakeLoginPerformer{session: newSess}
+	uc := app.NewLogin(store, performer)
+
+	res, err := uc.Run(context.Background(), app.LoginInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.AlreadyLoggedIn {
+		t.Error("expected AlreadyLoggedIn=false for new login")
+	}
+	if store.saved == nil {
+		t.Error("expected session to be saved")
+	}
+}
+
+func TestPlay_EmptyQuery_ValidationError(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	performer := &fakeLoginPerformer{}
+	loginUC := app.NewLogin(store, performer)
+	spotifyClient := &fakeSpotify{}
+	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
+
+	uc := app.NewPlay(loginUC, spotifyClient, devices, &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	_, err := uc.Run(context.Background(), app.PlayInput{Query: ""})
+	if err == nil {
+		t.Fatal("expected validation error for empty query")
+	}
+}
+
+func TestPlay_NotFound(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	performer := &fakeLoginPerformer{}
+	loginUC := app.NewLogin(store, performer)
+	spotifyClient := &fakeSpotify{searchResult: nil} // no match
+	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
+
+	uc := app.NewPlay(loginUC, spotifyClient, devices, &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	_, err := uc.Run(context.Background(), app.PlayInput{Query: "nonexistent"})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestPlay_Success(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	performer := &fakeLoginPerformer{}
+	loginUC := app.NewLogin(store, performer)
+	spotifyClient := &fakeSpotify{
+		searchResult: &domain.MatchResult{
+			Type:  domain.MatchTypeTrack,
+			Track: &domain.Track{URI: "spotify:track:1", Title: "Master of Puppets", Artist: "Metallica"},
+		},
+	}
+	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
+
+	uc := app.NewPlay(loginUC, spotifyClient, devices, &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	res, err := uc.Run(context.Background(), app.PlayInput{Query: "Master of Puppets"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Match.Track.Title != "Master of Puppets" {
+		t.Errorf("unexpected title: %q", res.Match.Track.Title)
+	}
+}
+
+func TestStatus_NotLoggedIn(t *testing.T) {
+	store := &fakeStore{session: nil}
+	spotifyClient := &fakeSpotify{}
+	uc := app.NewStatus(store, spotifyClient)
+
+	res, err := uc.Run(context.Background(), app.StatusInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.LoggedIn {
+		t.Error("expected LoggedIn=false when no session")
+	}
+}
+
+func TestStatus_Idle(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	spotifyClient := &fakeSpotify{
+		playback: &domain.CurrentPlayback{State: domain.PlaybackStateIdle},
+	}
+	uc := app.NewStatus(store, spotifyClient)
+
+	res, err := uc.Run(context.Background(), app.StatusInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.LoggedIn {
+		t.Error("expected LoggedIn=true")
+	}
+	if res.Playback.State != domain.PlaybackStateIdle {
+		t.Errorf("expected idle, got %q", res.Playback.State)
+	}
+}
