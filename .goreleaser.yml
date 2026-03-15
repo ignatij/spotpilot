@@ -1,0 +1,51 @@
+version: 2
+
+project_name: spotpilot
+
+builds:
+  - id: spotpilot
+    main: ./cmd/spotpilot
+    binary: spotpilot
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: spotpilot
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: spotpilot
+    homepage: "https://github.com/ignatij/spotpilot"
+    description: "Control Spotify from the command line — built for AI agents"
+    license: "MIT"
+    repository:
+      owner: ignatij
+      name: homebrew-spotpilot
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    install: |
+      bin.install "spotpilot"
+    test: |
+      system "#{bin}/spotpilot", "version"

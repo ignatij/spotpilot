@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ignatij/spotpilot/internal/app"
@@ -182,5 +183,70 @@ func TestStatus_Idle(t *testing.T) {
 	}
 	if res.Playback.State != domain.PlaybackStateIdle {
 		t.Errorf("expected idle, got %q", res.Playback.State)
+	}
+}
+
+// helpers shared by playback control tests
+func loggedInStore() *fakeStore { return &fakeStore{session: &app.Session{}} }
+func localDevice() *fakeDeviceDetector {
+	return &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
+}
+func noDevice() *fakeDeviceDetector {
+	return &fakeDeviceDetector{err: errors.New("no device")}
+}
+
+func TestPause_Success(t *testing.T) {
+	uc := app.NewPause(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, localDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPause_NoDevice(t *testing.T) {
+	uc := app.NewPause(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, noDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err == nil {
+		t.Fatal("expected error when no device found")
+	}
+}
+
+func TestResume_Success(t *testing.T) {
+	uc := app.NewResume(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, localDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResume_NoDevice(t *testing.T) {
+	uc := app.NewResume(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, noDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err == nil {
+		t.Fatal("expected error when no device found")
+	}
+}
+
+func TestNext_Success(t *testing.T) {
+	uc := app.NewNext(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, localDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNext_NoDevice(t *testing.T) {
+	uc := app.NewNext(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, noDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err == nil {
+		t.Fatal("expected error when no device found")
+	}
+}
+
+func TestPrevious_Success(t *testing.T) {
+	uc := app.NewPrevious(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, localDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrevious_NoDevice(t *testing.T) {
+	uc := app.NewPrevious(app.NewLogin(loggedInStore(), &fakeLoginPerformer{}), &fakeSpotify{}, noDevice(), &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	if _, err := uc.Run(context.Background(), app.PlaybackInput{}); err == nil {
+		t.Fatal("expected error when no device found")
 	}
 }

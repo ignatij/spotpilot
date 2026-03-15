@@ -25,14 +25,14 @@ type deps struct {
 // buildDeps constructs and wires all runtime dependencies.
 // Heavy initialization is deferred to here so startup stays cheap.
 func buildDeps(cfg config.Config) (*deps, error) {
-	fileStore, err := auth.NewFileStore("")
+	cs, err := auth.NewAutoStore()
 	if err != nil {
 		return nil, fmt.Errorf("initializing session store: %w", err)
 	}
 
 	b := browser.New()
 
-	store := auth.NewAppStoreAdapter(fileStore)
+	store := auth.NewAppStoreAdapter(cs)
 	loginPerformer := auth.NewCDPLoginPerformer()
 
 	sess, _ := store.Load(context.Background())

@@ -6,13 +6,13 @@ import (
 	"github.com/ignatij/spotpilot/internal/app"
 )
 
-// AppStoreAdapter adapts FileStore to the app.SessionStore port.
+// AppStoreAdapter adapts a CredentialStore to the app.SessionStore port.
 type AppStoreAdapter struct {
-	inner *FileStore
+	inner CredentialStore
 }
 
-// NewAppStoreAdapter wraps a FileStore to satisfy app.SessionStore.
-func NewAppStoreAdapter(inner *FileStore) *AppStoreAdapter {
+// NewAppStoreAdapter wraps a CredentialStore to satisfy app.SessionStore.
+func NewAppStoreAdapter(inner CredentialStore) *AppStoreAdapter {
 	return &AppStoreAdapter{inner: inner}
 }
 

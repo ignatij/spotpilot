@@ -109,3 +109,20 @@ func defaultSessionPath() (string, error) {
 	}
 	return filepath.Join(base, "spotpilot", "session.json"), nil
 }
+
+// CredentialStore is the interface implemented by all session persistence backends.
+type CredentialStore interface {
+	Load(ctx context.Context) (*Session, error)
+	Save(ctx context.Context, sess *Session) error
+	Clear(ctx context.Context) error
+}
+
+// NewAutoStore returns a CredentialStore backed by the OS keychain when available,
+// falling back to a protected file store otherwise.
+func NewAutoStore() (CredentialStore, error) {
+	store, err := newKeychainStore()
+	if err == nil {
+		return store, nil
+	}
+	return NewFileStore("")
+}
