@@ -1,6 +1,6 @@
 # Agent Instructions
 
-`spotpilot` is a Go CLI whose functional requirements are still evolving. The technical baseline lives in `docs/technical/`.
+`spotpilot` is a Go CLI that enables AI agents to control Spotify playback. The v1 functional spec lives in `docs/functional/v1-spec.md`. The technical baseline lives in `docs/technical/`.
 
 Before making architecture-affecting changes, read:
 

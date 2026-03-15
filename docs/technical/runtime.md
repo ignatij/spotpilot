@@ -15,7 +15,7 @@
 - Use XDG-style or otherwise platform-standard directories for config, cache, and state
 - Keep application files under clearly named `spotpilot` subdirectories
 - Default config file name: `config.yaml`
-- The durable local storage mechanism beyond config/cache is still undecided
+- Credentials are stored in the OS keychain (macOS Keychain / Linux secret-service) with a protected-file fallback when no keychain is available
 - Prefer explicit path flags over implicit current-directory behavior unless the working directory is clearly part of the contract
 - Normalize and validate path inputs at the boundary
 - Filesystem mutations should follow the same dry-run and change-summary conventions as other mutating commands
@@ -25,9 +25,16 @@
 - Do not introduce abstractions for time or randomness until they are needed
 - If they become necessary, wrap them behind small helpers so tests can stay deterministic
 
+## External Process Interactions
+
+- Browser launch is required for Spotify OAuth login; use the OS default browser
+- Spotify desktop application may be running but is not directly controlled; interaction is through the Spotify Web API
+- Keep browser-launch logic behind a port so tests can substitute it
+- Timeouts for OAuth callback and API calls should have conservative defaults and be configurable
+
 ## Runtime vs Output Responsibilities
 
 - Runtime/process behavior owns command execution flow and exit-code mapping
-- `internal/output` owns envelope models and rendering into JSON, YAML, or text
+- `internal/output` owns envelope models and rendering into JSON or plain text
 - Introduce a dedicated runtime package only when concrete cross-cutting runtime concerns justify it
 - Defer standardizing progress reporting until real long-running workflows require it

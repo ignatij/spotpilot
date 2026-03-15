@@ -34,7 +34,7 @@
 
 The initial shared global flag surface is:
 
-- `--output`
+- `--plain` (single concise line of human-readable output instead of JSON)
 - `--config`
 - `--verbose`
 - `--debug`

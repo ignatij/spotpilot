@@ -50,7 +50,7 @@ This repository should start with a small, explicit package set and only grow wh
 ### `internal/output`
 
 - Success/error envelope models
-- Rendering into JSON, YAML, and text
+- Rendering into JSON and plain text
 - Mapping application-facing results into presentation-facing DTOs
 - No process-exit decisions
 
@@ -60,6 +60,12 @@ This repository should start with a small, explicit package set and only grow wh
 - Organized by external service or integration concern
 - Implement ports owned by `internal/app`
 - Wrap vendor clients and translate vendor-specific auth, config, and response data into repository-owned models
+
+Expected v1 sub-packages:
+
+- `internal/integrations/spotify` — Spotify Web API client adapter
+- `internal/integrations/auth` — OAuth flow, token storage (keychain + file fallback), session management
+- `internal/integrations/browser` — OS default browser launch for OAuth callback
 
 ## Growth Rules
 

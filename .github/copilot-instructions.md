@@ -55,10 +55,10 @@ Avoid creating `pkg/` unless the project has a deliberate need for a reusable pu
 - Prefer `snake_case` for config keys and structured output field names
 - Use XDG-style or otherwise platform-standard directories for config, cache, and state
 - Default config filename is `config.yaml`
-- Command results should be stable on `stdout` and support `--output json|yaml|text`
-- JSON is the primary stability target; YAML and text are derived formats
-- Use a standard envelope: success as `{\"ok\":true,\"data\":...}` and error as `{\"ok\":false,\"error\":...}`
-- Text output should be compact, plain, and derived from the same result model as JSON/YAML
+- Command results are JSON by default on `stdout`; use `--plain` for a concise human-readable line
+- JSON is the primary stability target
+- Use a standard envelope: `{\"ok\":true,\"command\":\"...\",\"state\":\"...\",\"message\":\"...\"}` with optional `result` payload
+- Plain text output should be compact and derived from the same result model as JSON
 - Human-oriented diagnostics belong on `stderr`
 - Default output should stay quiet; use `--verbose` and `--debug` for additional detail
 - Inject version, commit, and build date at build/release time and expose them through the `version` command
@@ -76,6 +76,6 @@ Avoid creating `pkg/` unless the project has a deliberate need for a reusable pu
 - Prefer env vars and OS-native keychain integration for credentials instead of plain-text secrets in config files
 - Keep telemetry disabled by default; any future telemetry must be explicit opt-in
 
-## Current Open Decision
+## Credential Storage
 
-- The durable storage mechanism for local state is still undecided. Do not hard-code one without updating the project docs first.
+- Credentials are stored in the OS keychain (macOS Keychain / Linux secret-service) with a protected-file fallback when no keychain is available

@@ -52,6 +52,17 @@ Adapters depend inward on consumer-owned ports exposed by the consuming layer.
 - Map integration data into app-owned or domain-owned models before wider use
 - Keep vendor-specific auth and config translation inside integration packages
 
+### v1 Integration Boundaries
+
+- **Spotify Web API** — all playback control and search goes through the Spotify Web API, not through direct desktop-app control
+- **OAuth / Token Storage** — handles the Spotify OAuth PKCE flow, stores tokens in OS keychain with protected-file fallback
+- **Browser Launch** — opens the OS default browser for OAuth; abstracted behind a port so tests can substitute it
+
+### Workflow Composition
+
+- Commands like `play` may auto-trigger `login` when no valid session exists; this is app-layer workflow composition, not domain logic
+- Keep auto-trigger logic in `internal/app` use cases, not in Cobra command wiring or domain packages
+
 ## Execution Flow
 
 Commands should follow a consistent shape:
