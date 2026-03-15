@@ -33,7 +33,7 @@ func buildDeps(cfg config.Config) (*deps, error) {
 	b := browser.New()
 
 	store := auth.NewAppStoreAdapter(fileStore)
-	loginPerformer := auth.NewLoginPerformer(fileStore, b)
+	loginPerformer := auth.NewCDPLoginPerformer()
 
 	sess, _ := store.Load(context.Background())
 	var token string

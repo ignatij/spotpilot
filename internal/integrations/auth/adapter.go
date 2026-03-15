@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ignatij/spotpilot/internal/app"
 )
@@ -42,40 +41,4 @@ func (a *AppStoreAdapter) Save(ctx context.Context, s *app.Session) error {
 
 func (a *AppStoreAdapter) Clear(ctx context.Context) error {
 	return a.inner.Clear(ctx)
-}
-
-// LoginPerformer implements the app.LoginPerformer port.
-// It opens Chrome/Chromium, waits for the user to log in to Spotify,
-// then imports the browser cookies.
-//
-// NOTE: The cookie import mechanism (reading the Chrome cookie database) is
-// complex and platform-specific. This implementation provides the scaffolding;
-// the real cookie extraction is a separate integration concern.
-type LoginPerformer struct {
-	store   *FileStore
-	browser browserOpener
-}
-
-type browserOpener interface {
-	LaunchLogin(ctx context.Context, url string) error
-}
-
-// NewLoginPerformer creates a LoginPerformer.
-func NewLoginPerformer(store *FileStore, browser browserOpener) *LoginPerformer {
-	return &LoginPerformer{store: store, browser: browser}
-}
-
-// PerformLogin opens the Spotify login page in Chrome/Chromium, waits for the
-// user to authenticate, and returns the imported session.
-func (l *LoginPerformer) PerformLogin(ctx context.Context) (*app.Session, error) {
-	const spotifyLoginURL = "https://accounts.spotify.com/login"
-
-	if err := l.browser.LaunchLogin(ctx, spotifyLoginURL); err != nil {
-		return nil, fmt.Errorf("launching browser for login: %w", err)
-	}
-
-	// TODO: implement cookie import from Chrome/Chromium.
-	// For now, block until ctx is done so callers get a clear signal.
-	<-ctx.Done()
-	return nil, fmt.Errorf("login not yet implemented: %w", ctx.Err())
 }

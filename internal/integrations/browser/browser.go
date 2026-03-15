@@ -31,6 +31,13 @@ func (l *Launcher) LaunchURL(ctx context.Context, url string) error {
 	return openDefault(ctx, url)
 }
 
+// FindChromeBinary returns the path to Chrome or Chromium, preferring Chrome.
+// Returns ErrNoBrowser if neither is installed. Used by integrations that need
+// to launch Chrome directly (e.g. the CDP login performer).
+func FindChromeBinary() (string, error) {
+	return findBrowser()
+}
+
 // findBrowser returns the path to Chrome or Chromium, preferring Chrome.
 func findBrowser() (string, error) {
 	candidates := browserCandidates()
