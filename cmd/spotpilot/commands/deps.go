@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/ignatij/spotpilot/internal/app"
@@ -35,24 +36,43 @@ func buildDeps(cfg config.Config) (*deps, error) {
 	store := auth.NewAppStoreAdapter(cs)
 	loginPerformer := auth.NewCDPLoginPerformer()
 
-	sess, _ := store.Load(context.Background())
-	var token string
-	if sess != nil && len(sess.Cookies) > 0 {
-		// Extract sp_dc cookie as Bearer-equivalent token.
-		for _, c := range sess.Cookies {
-			if c.Name == "sp_dc" {
-				token = c.Value
-				break
-			}
+	cookieSource := spotify.CookieSourceFunc(func(ctx context.Context) ([]*http.Cookie, error) {
+		sess, err := cs.Load(ctx)
+		if err != nil {
+			return nil, err
 		}
-	}
+		if sess == nil {
+			return nil, fmt.Errorf("not authenticated — run 'spotpilot login' first")
+		}
 
-	spotifyClient := spotify.New(func() (string, error) {
-		if token == "" {
-			return "", fmt.Errorf("not authenticated")
+		cookies := make([]*http.Cookie, 0, len(sess.Cookies))
+		for _, cookie := range sess.Cookies {
+			if cookie.Value == "" {
+				continue
+			}
+			cookies = append(cookies, &http.Cookie{
+				Name:     cookie.Name,
+				Value:    cookie.Value,
+				Domain:   ".spotify.com",
+				Path:     "/",
+				Secure:   true,
+				HttpOnly: true,
+			})
 		}
-		return token, nil
+		if len(cookies) == 0 {
+			return nil, fmt.Errorf("no Spotify session cookies found — run 'spotpilot login' again")
+		}
+		return cookies, nil
 	})
+
+	cookieTokenProvider := spotify.CookieTokenProvider{Source: cookieSource}
+
+	webClient := spotify.New(cookieTokenProvider.Token)
+	connectClient, err := spotify.NewConnectClient(cookieSource, webClient)
+	if err != nil {
+		return nil, fmt.Errorf("initializing connect playback client: %w", err)
+	}
+	spotifyClient := spotify.NewHybridClient(webClient, connectClient)
 
 	hostname, _ := os.Hostname()
 	deviceDetector := spotify.NewDeviceDetector(spotifyClient, hostname)

@@ -81,11 +81,7 @@ func StateForError(err error) State {
 func ErrorEnvelope(command string, err error) Envelope {
 	msg := "an error occurred"
 	if err != nil {
-		var c categorized
-		if errors.As(err, &c) {
-			// Use the error's own message for categorized errors.
-			msg = err.Error()
-		}
+		msg = err.Error()
 	}
 	return Envelope{
 		OK:      false,

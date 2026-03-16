@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/ignatij/spotpilot/internal/domain"
 )
@@ -29,7 +30,9 @@ type SessionStore interface {
 // Session holds a persisted Spotify session.
 type Session struct {
 	// Cookies contains the raw browser session cookies.
-	Cookies []Cookie
+	Cookies     []Cookie
+	AccessToken string
+	TokenExpiry time.Time
 }
 
 // Cookie is a browser session cookie.

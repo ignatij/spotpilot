@@ -5,6 +5,7 @@ package browser
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 )
 
 func browserCandidates() []string {
@@ -13,6 +14,13 @@ func browserCandidates() []string {
 		"google-chrome-stable",
 		"chromium",
 		"chromium-browser",
+	}
+}
+
+func userDataDirCandidates(homeDir string) []string {
+	return []string{
+		filepath.Join(homeDir, ".config", "google-chrome"),
+		filepath.Join(homeDir, ".config", "chromium"),
 	}
 }
 

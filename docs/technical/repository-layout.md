@@ -64,8 +64,8 @@ This repository should start with a small, explicit package set and only grow wh
 Expected v1 sub-packages:
 
 - `internal/integrations/spotify` — Spotify Web API client adapter
-- `internal/integrations/auth` — OAuth flow, token storage (keychain + file fallback), session management
-- `internal/integrations/browser` — OS default browser launch for OAuth callback
+- `internal/integrations/auth` — browser-session import, session storage (keychain + file fallback), cookie management
+- `internal/integrations/browser` — browser discovery and launch for Spotify sign-in and web-player fallback
 
 ## Growth Rules
 

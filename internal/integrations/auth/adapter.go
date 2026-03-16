@@ -24,7 +24,10 @@ func (a *AppStoreAdapter) Load(ctx context.Context) (*app.Session, error) {
 	if sess == nil {
 		return nil, nil
 	}
-	out := &app.Session{}
+	out := &app.Session{
+		AccessToken: sess.AccessToken,
+		TokenExpiry: sess.TokenExpiry,
+	}
 	for _, c := range sess.Cookies {
 		out.Cookies = append(out.Cookies, app.Cookie{Name: c.Name, Value: c.Value})
 	}
@@ -32,7 +35,10 @@ func (a *AppStoreAdapter) Load(ctx context.Context) (*app.Session, error) {
 }
 
 func (a *AppStoreAdapter) Save(ctx context.Context, s *app.Session) error {
-	inner := &Session{}
+	inner := &Session{
+		AccessToken: s.AccessToken,
+		TokenExpiry: s.TokenExpiry,
+	}
 	for _, c := range s.Cookies {
 		inner.Cookies = append(inner.Cookies, Cookie{Name: c.Name, Value: c.Value})
 	}

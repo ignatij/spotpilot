@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 // FileStore persists sessions as a protected JSON file.
@@ -31,12 +32,46 @@ func NewFileStore(path string) (*FileStore, error) {
 }
 
 type persistedSession struct {
-	Cookies []persistedCookie `json:"cookies"`
+	Cookies     []persistedCookie `json:"cookies"`
+	AccessToken string            `json:"access_token,omitempty"`
+	TokenExpiry int64             `json:"token_expiry_ms,omitempty"`
 }
 
 type persistedCookie struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+// marshalSession encodes a Session into JSON bytes for any storage backend.
+func marshalSession(sess *Session) ([]byte, error) {
+	ps := persistedSession{
+		AccessToken: sess.AccessToken,
+	}
+	if !sess.TokenExpiry.IsZero() {
+		ps.TokenExpiry = sess.TokenExpiry.UnixMilli()
+	}
+	for _, c := range sess.Cookies {
+		ps.Cookies = append(ps.Cookies, persistedCookie{Name: c.Name, Value: c.Value})
+	}
+	return json.Marshal(ps)
+}
+
+// unmarshalSession decodes JSON bytes into a Session for any storage backend.
+func unmarshalSession(data []byte) (*Session, error) {
+	var ps persistedSession
+	if err := json.Unmarshal(data, &ps); err != nil {
+		return nil, err
+	}
+	sess := &Session{
+		AccessToken: ps.AccessToken,
+	}
+	if ps.TokenExpiry != 0 {
+		sess.TokenExpiry = time.UnixMilli(ps.TokenExpiry)
+	}
+	for _, c := range ps.Cookies {
+		sess.Cookies = append(sess.Cookies, Cookie{Name: c.Name, Value: c.Value})
+	}
+	return sess, nil
 }
 
 // Load reads a saved session from the file. Returns (nil, nil) if the file
@@ -54,10 +89,9 @@ func (s *FileStore) Load(_ context.Context) (*Session, error) {
 	if err := json.Unmarshal(data, &ps); err != nil {
 		return nil, fmt.Errorf("parsing session file: %w", err)
 	}
-
-	sess := &Session{}
-	for _, c := range ps.Cookies {
-		sess.Cookies = append(sess.Cookies, Cookie{Name: c.Name, Value: c.Value})
+	sess, err := unmarshalSession(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing session file: %w", err)
 	}
 	return sess, nil
 }
@@ -68,7 +102,12 @@ func (s *FileStore) Save(_ context.Context, sess *Session) error {
 		return fmt.Errorf("creating session directory: %w", err)
 	}
 
-	ps := persistedSession{}
+	ps := persistedSession{
+		AccessToken: sess.AccessToken,
+	}
+	if !sess.TokenExpiry.IsZero() {
+		ps.TokenExpiry = sess.TokenExpiry.UnixMilli()
+	}
 	for _, c := range sess.Cookies {
 		ps.Cookies = append(ps.Cookies, persistedCookie{Name: c.Name, Value: c.Value})
 	}

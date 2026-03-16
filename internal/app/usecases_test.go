@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ignatij/spotpilot/internal/app"
@@ -31,20 +32,41 @@ func (f *fakeLoginPerformer) PerformLogin(_ context.Context) (*app.Session, erro
 }
 
 type fakeSpotify struct {
-	searchResult *domain.MatchResult
-	devices      []domain.Device
-	playback     *domain.CurrentPlayback
+	searchResult  *domain.MatchResult
+	searchResults map[string]*domain.MatchResult
+	devices       []domain.Device
+	playback      *domain.CurrentPlayback
+	playbacks     []*domain.CurrentPlayback
+	playErr       error
+	playedURI     string
+	playCalls     int
 }
 
-func (f *fakeSpotify) Search(_ context.Context, _ string) (*domain.MatchResult, error) {
+func (f *fakeSpotify) Search(_ context.Context, query string) (*domain.MatchResult, error) {
+	if f.searchResults != nil {
+		if result, ok := f.searchResults[query]; ok {
+			return result, nil
+		}
+	}
 	return f.searchResult, nil
 }
-func (f *fakeSpotify) Play(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeSpotify) Pause(_ context.Context, _ string) error          { return nil }
-func (f *fakeSpotify) Resume(_ context.Context, _ string) error         { return nil }
-func (f *fakeSpotify) Next(_ context.Context, _ string) error           { return nil }
-func (f *fakeSpotify) Previous(_ context.Context, _ string) error       { return nil }
+func (f *fakeSpotify) Play(_ context.Context, _ string, uri string) error {
+	f.playCalls++
+	f.playedURI = uri
+	return f.playErr
+}
+func (f *fakeSpotify) Pause(_ context.Context, _ string) error    { return nil }
+func (f *fakeSpotify) Resume(_ context.Context, _ string) error   { return nil }
+func (f *fakeSpotify) Next(_ context.Context, _ string) error     { return nil }
+func (f *fakeSpotify) Previous(_ context.Context, _ string) error { return nil }
 func (f *fakeSpotify) CurrentPlayback(_ context.Context) (*domain.CurrentPlayback, error) {
+	if len(f.playbacks) > 0 {
+		pb := f.playbacks[0]
+		if len(f.playbacks) > 1 {
+			f.playbacks = f.playbacks[1:]
+		}
+		return pb, nil
+	}
 	return f.playback, nil
 }
 func (f *fakeSpotify) ListDevices(_ context.Context) ([]domain.Device, error) {
@@ -72,7 +94,7 @@ func (f *fakeBrowserLauncher) LaunchURL(_ context.Context, _ string) error   { r
 // --- tests ---
 
 func TestLogin_AlreadyLoggedIn(t *testing.T) {
-	store := &fakeStore{session: &app.Session{}}
+	store := &fakeStore{session: &app.Session{Cookies: []app.Cookie{{Name: "sp_dc", Value: "tok"}, {Name: "sp_t", Value: "device"}}}}
 	performer := &fakeLoginPerformer{}
 	uc := app.NewLogin(store, performer)
 
@@ -140,6 +162,10 @@ func TestPlay_Success(t *testing.T) {
 			Type:  domain.MatchTypeTrack,
 			Track: &domain.Track{URI: "spotify:track:1", Title: "Master of Puppets", Artist: "Metallica"},
 		},
+		playback: &domain.CurrentPlayback{
+			State: domain.PlaybackStatePlaying,
+			Track: &domain.Track{URI: "spotify:track:1", Title: "Master of Puppets", Artist: "Metallica"},
+		},
 	}
 	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
 
@@ -150,6 +176,34 @@ func TestPlay_Success(t *testing.T) {
 	}
 	if res.Match.Track.Title != "Master of Puppets" {
 		t.Errorf("unexpected title: %q", res.Match.Track.Title)
+	}
+}
+
+func TestPlayVerificationMismatch(t *testing.T) {
+	store := &fakeStore{session: &app.Session{}}
+	performer := &fakeLoginPerformer{}
+	loginUC := app.NewLogin(store, performer)
+	spotifyClient := &fakeSpotify{
+		searchResult: &domain.MatchResult{
+			Type:  domain.MatchTypeTrack,
+			Track: &domain.Track{URI: "spotify:track:battery", Title: "Battery", Artist: "Metallica"},
+		},
+		playbacks: []*domain.CurrentPlayback{
+			{State: domain.PlaybackStatePlaying, Track: &domain.Track{URI: "spotify:track:enter-sandman", Title: "Enter Sandman", Artist: "Metallica"}},
+			{State: domain.PlaybackStatePlaying, Track: &domain.Track{URI: "spotify:track:enter-sandman", Title: "Enter Sandman", Artist: "Metallica"}},
+			{State: domain.PlaybackStatePlaying, Track: &domain.Track{URI: "spotify:track:enter-sandman", Title: "Enter Sandman", Artist: "Metallica"}},
+			{State: domain.PlaybackStatePlaying, Track: &domain.Track{URI: "spotify:track:enter-sandman", Title: "Enter Sandman", Artist: "Metallica"}},
+		},
+	}
+	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
+
+	uc := app.NewPlay(loginUC, spotifyClient, devices, &fakeAppLauncher{}, &fakeBrowserLauncher{})
+	_, err := uc.Run(context.Background(), app.PlayInput{Query: "Battery"})
+	if err == nil {
+		t.Fatal("expected error when playback stays on a different track")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "different track") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -168,7 +222,7 @@ func TestStatus_NotLoggedIn(t *testing.T) {
 }
 
 func TestStatus_Idle(t *testing.T) {
-	store := &fakeStore{session: &app.Session{}}
+	store := &fakeStore{session: &app.Session{Cookies: []app.Cookie{{Name: "sp_dc", Value: "tok"}}}}
 	spotifyClient := &fakeSpotify{
 		playback: &domain.CurrentPlayback{State: domain.PlaybackStateIdle},
 	}
@@ -187,7 +241,9 @@ func TestStatus_Idle(t *testing.T) {
 }
 
 // helpers shared by playback control tests
-func loggedInStore() *fakeStore { return &fakeStore{session: &app.Session{}} }
+func loggedInStore() *fakeStore {
+	return &fakeStore{session: &app.Session{Cookies: []app.Cookie{{Name: "sp_dc", Value: "tok"}, {Name: "sp_t", Value: "device"}}}}
+}
 func localDevice() *fakeDeviceDetector {
 	return &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
 }

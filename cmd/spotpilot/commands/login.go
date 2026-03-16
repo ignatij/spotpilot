@@ -27,6 +27,9 @@ func newLoginCmd(flags *rootFlags, cfgFor func() (config.Config, error)) *cobra.
 			}
 
 			ctx := cmd.Context()
+			ctx, cancel := withLoginTimeout(ctx, cfg)
+			defer cancel()
+
 			loginUC := app.NewLogin(deps.store, deps.loginPerformer)
 			res, err := loginUC.Run(ctx, app.LoginInput{})
 			if err != nil {

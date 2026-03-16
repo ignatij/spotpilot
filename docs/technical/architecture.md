@@ -55,8 +55,9 @@ Adapters depend inward on consumer-owned ports exposed by the consuming layer.
 ### v1 Integration Boundaries
 
 - **Spotify Web API** — all playback control and search goes through the Spotify Web API, not through direct desktop-app control
-- **OAuth / Token Storage** — handles the Spotify OAuth PKCE flow, stores tokens in OS keychain with protected-file fallback
-- **Browser Launch** — opens the OS default browser for OAuth; abstracted behind a port so tests can substitute it
+- **Browser Session Auth** — imports Spotify web session cookies via Chrome and persists them in OS keychain with protected-file fallback
+- **Token Minting** — derives short-lived web-player access tokens from persisted cookies inside the Spotify integration instead of storing a browser-captured bearer token as the source of truth
+- **Browser Launch** — opens Chrome or Chromium for Spotify sign-in and the OS default browser for fallback web-player launch; abstracted behind ports so tests can substitute it
 
 ### Workflow Composition
 

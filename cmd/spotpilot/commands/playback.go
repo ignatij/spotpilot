@@ -33,7 +33,10 @@ func makeSimplePlayback(
 		}
 
 		uc := ucFn(d)
-		if _, err := uc.Run(cmd.Context(), app.PlaybackInput{}); err != nil {
+		ctx, cancel := withPlaybackTimeout(cmd.Context(), cfg)
+		defer cancel()
+
+		if _, err := uc.Run(ctx, app.PlaybackInput{}); err != nil {
 			return runErr(flags, command, err)
 		}
 		return renderer(flags).Render(output.Envelope{

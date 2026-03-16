@@ -5,7 +5,6 @@ package auth
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -38,24 +37,16 @@ func (k *keychainStore) Load(_ context.Context) (*Session, error) {
 	if data == "" {
 		return nil, nil
 	}
-	var ps persistedSession
-	if err := json.Unmarshal([]byte(data), &ps); err != nil {
+	sess, err := unmarshalSession([]byte(data))
+	if err != nil {
 		// Corrupted entry — treat as no session.
 		return nil, nil
-	}
-	sess := &Session{}
-	for _, c := range ps.Cookies {
-		sess.Cookies = append(sess.Cookies, Cookie{Name: c.Name, Value: c.Value})
 	}
 	return sess, nil
 }
 
 func (k *keychainStore) Save(_ context.Context, sess *Session) error {
-	ps := persistedSession{}
-	for _, c := range sess.Cookies {
-		ps.Cookies = append(ps.Cookies, persistedCookie{Name: c.Name, Value: c.Value})
-	}
-	data, err := json.Marshal(ps)
+	data, err := marshalSession(sess)
 	if err != nil {
 		return fmt.Errorf("encoding session: %w", err)
 	}

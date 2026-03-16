@@ -4,6 +4,7 @@ package browser
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 )
 
@@ -36,6 +37,21 @@ func (l *Launcher) LaunchURL(ctx context.Context, url string) error {
 // to launch Chrome directly (e.g. the CDP login performer).
 func FindChromeBinary() (string, error) {
 	return findBrowser()
+}
+
+// FindChromeUserDataDir returns the first existing Chrome/Chromium user data
+// directory for the current platform.
+func FindChromeUserDataDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range userDataDirCandidates(homeDir) {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", ErrNoBrowser
 }
 
 // findBrowser returns the path to Chrome or Chromium, preferring Chrome.
