@@ -2,7 +2,6 @@
 package commands
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -69,13 +68,4 @@ func NewRoot(info BuildInfo) *cobra.Command {
 // renderer builds an output.Renderer from the global flags.
 func renderer(flags *rootFlags) *output.Renderer {
 	return output.NewRenderer(os.Stdout, flags.plain)
-}
-
-// handleErr writes the error envelope and returns the exit code.
-func handleErr(r *output.Renderer, command string, err error) int {
-	env := output.ErrorEnvelope(command, err)
-	if renderErr := r.Render(env); renderErr != nil {
-		fmt.Fprintf(os.Stderr, "render error: %v\n", renderErr)
-	}
-	return output.ExitCode(err)
 }

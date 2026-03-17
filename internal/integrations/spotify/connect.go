@@ -175,7 +175,7 @@ func (c *ConnectClient) invalidateRegistration() {
 	c.session.mu.Lock()
 	c.session.connectionID = ""
 	c.session.registeredAt = time.Time{}
-	c.session.connectDeviceID = randomHex(32)
+	c.session.connectDeviceID = randomHex()
 	c.session.mu.Unlock()
 }
 
@@ -472,19 +472,6 @@ func collectSpotifyURIs(value any, uris *[]string) {
 	}
 }
 
-func firstSearchItem(payload map[string]any, paths [][]string) map[string]any {
-	for _, path := range paths {
-		items, ok := nestedSlice(payload, path...)
-		if !ok || len(items) == 0 {
-			continue
-		}
-		if item := unwrapSearchItem(items[0]); item != nil {
-			return item
-		}
-	}
-	return nil
-}
-
 func searchItems(payload map[string]any, paths [][]string) []map[string]any {
 	items := make([]map[string]any, 0, searchResultLimit)
 	for _, path := range paths {
@@ -685,7 +672,7 @@ func (c *ConnectClient) Transfer(ctx context.Context, deviceID string) error {
 		fmt.Sprintf("%s/connect/transfer/from/%s/to/%s", connectStateBase, fromID, deviceID),
 		map[string]any{
 			"transfer_options": map[string]any{"restore_paused": "resume"},
-			"command_id":       randomHex(32),
+			"command_id":       randomHex(),
 		},
 	)
 }
@@ -764,7 +751,7 @@ func (c *ConnectClient) connectState(ctx context.Context) (connectState, error) 
 func (c *ConnectClient) ensureConnectDevice(ctx context.Context, auth connectAuth) error {
 	c.session.mu.Lock()
 	if c.session.connectDeviceID == "" {
-		c.session.connectDeviceID = randomHex(32)
+		c.session.connectDeviceID = randomHex()
 	}
 	needsRegistration := c.session.connectionID == "" || time.Since(c.session.registeredAt) > connectionTTL
 	c.session.mu.Unlock()
@@ -847,17 +834,13 @@ func (c *ConnectClient) registerDevice(ctx context.Context, auth connectAuth, co
 	return nil
 }
 
-func (c *ConnectClient) sendPlayerCommand(ctx context.Context, state connectState, endpoint string, payload map[string]any) error {
-	return c.sendPlayerCommandTo(ctx, state, "", endpoint, payload)
-}
-
 func (c *ConnectClient) sendPlayerCommandTo(ctx context.Context, state connectState, deviceID string, endpoint string, payload map[string]any) error {
 	if payload == nil {
 		payload = map[string]any{
 			"command": map[string]any{
 				"endpoint": endpoint,
 				"logging_params": map[string]any{
-					"command_id": randomHex(32),
+					"command_id": randomHex(),
 				},
 			},
 		}
@@ -1035,7 +1018,7 @@ func (s *connectSession) ensureClientTokenLocked(ctx context.Context) error {
 		return errors.New("missing client id")
 	}
 
-	osName, osVersion := runtimeOS()
+	osName := runtimeOS()
 	payload := map[string]any{
 		"client_data": map[string]any{
 			"client_version": s.clientVersion,
@@ -1044,7 +1027,7 @@ func (s *connectSession) ensureClientTokenLocked(ctx context.Context) error {
 				"device_brand": "unknown",
 				"device_model": "unknown",
 				"os":           osName,
-				"os_version":   osVersion,
+				"os_version":   "unknown",
 				"device_id":    s.deviceID,
 				"device_type":  "computer",
 			},
@@ -1235,14 +1218,14 @@ func resolveConnectVersion() string {
 	return "harmony:4.43.2-a61ecaf5"
 }
 
-func runtimeOS() (string, string) {
+func runtimeOS() string {
 	switch runtime.GOOS {
 	case "darwin":
-		return "macos", "unknown"
+		return "macos"
 	case "windows":
-		return "windows", "unknown"
+		return "windows"
 	default:
-		return "linux", "unknown"
+		return "linux"
 	}
 }
 
@@ -1257,15 +1240,13 @@ func encodeJSON(payload any) *strings.Reader {
 	return strings.NewReader(string(data))
 }
 
-func randomHex(size int) string {
-	if size <= 0 {
-		return ""
-	}
-	raw := make([]byte, (size+1)/2)
+func randomHex() string {
+	const size = 32
+	raw := make([]byte, size/2)
 	if _, err := rand.Read(raw); err != nil {
 		return strings.Repeat("0", size)
 	}
-	return hex.EncodeToString(raw)[:size]
+	return hex.EncodeToString(raw)
 }
 
 func connectVersionFor(auth connectAuth) string {
@@ -1279,7 +1260,7 @@ func playCommandPayload(uri string) map[string]any {
 	command := map[string]any{
 		"endpoint": "play",
 		"logging_params": map[string]any{
-			"command_id": randomHex(32),
+			"command_id": randomHex(),
 		},
 		"context": map[string]any{
 			"uri": uri,

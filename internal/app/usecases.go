@@ -67,12 +67,12 @@ type Play struct {
 	login    *Login
 	spotify  SpotifyClient
 	devices  DeviceDetector
-	apps     AppLauncher
+	apps     Launcher
 	browsers BrowserLauncher
 }
 
 // NewPlay creates a Play use case.
-func NewPlay(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browsers BrowserLauncher) *Play {
+func NewPlay(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browsers BrowserLauncher) *Play {
 	return &Play{login: login, spotify: spotify, devices: devices, apps: apps, browsers: browsers}
 }
 
@@ -92,14 +92,8 @@ func (u *Play) Run(ctx context.Context, in PlayInput) (*PlayResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	match, err = u.refineMatchForPlay(ctx, in.Query, match)
-	if err != nil {
-		return nil, err
-	}
-	match, err = u.ensurePlayableMatch(ctx, in.Query, match)
-	if err != nil {
-		return nil, err
-	}
+	match = u.refineMatchForPlay(ctx, in.Query, match)
+	match = u.ensurePlayableMatch(ctx, in.Query, match)
 	if match == nil {
 		return nil, &appError{cat: catNotFound, msg: "no matching track, album, or artist found"}
 	}
@@ -192,9 +186,9 @@ func (u *Play) verifyRequestedPlayback(ctx context.Context, match *domain.MatchR
 	return &appError{cat: catError, msg: "playback stayed on a different track", err: fmt.Errorf("expected %s got %s", expected, observed)}
 }
 
-func (u *Play) ensurePlayableMatch(ctx context.Context, query string, match *domain.MatchResult) (*domain.MatchResult, error) {
+func (u *Play) ensurePlayableMatch(ctx context.Context, query string, match *domain.MatchResult) *domain.MatchResult {
 	if hasPlayableURI(match) {
-		return match, nil
+		return match
 	}
 
 	queries := []string{
@@ -208,14 +202,14 @@ func (u *Play) ensurePlayableMatch(ctx context.Context, query string, match *dom
 			continue
 		}
 		if hasPlayableURI(candidate) {
-			return candidate, nil
+			return candidate
 		}
 	}
 
 	if match == nil {
-		return nil, nil
+		return nil
 	}
-	return match, nil
+	return match
 }
 
 func hasPlayableURI(match *domain.MatchResult) bool {
@@ -286,9 +280,9 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func (u *Play) refineMatchForPlay(ctx context.Context, query string, match *domain.MatchResult) (*domain.MatchResult, error) {
+func (u *Play) refineMatchForPlay(ctx context.Context, query string, match *domain.MatchResult) *domain.MatchResult {
 	if !needsTrackRefinement(query, match) {
-		return match, nil
+		return match
 	}
 	queries := []string{
 		strings.TrimSpace(query) + " track",
@@ -300,10 +294,10 @@ func (u *Play) refineMatchForPlay(ctx context.Context, query string, match *doma
 			continue
 		}
 		if refined.Type == domain.MatchTypeTrack {
-			return refined, nil
+			return refined
 		}
 	}
-	return match, nil
+	return match
 }
 
 func needsTrackRefinement(query string, match *domain.MatchResult) bool {
@@ -421,12 +415,12 @@ type playbackUseCase struct {
 	login   *Login
 	spotify SpotifyClient
 	devices DeviceDetector
-	apps    AppLauncher
+	apps    Launcher
 	browser BrowserLauncher
 	action  func(ctx context.Context, deviceID string) error
 }
 
-func newPlaybackUseCase(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browser BrowserLauncher, action func(context.Context, string) error) *playbackUseCase {
+func newPlaybackUseCase(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browser BrowserLauncher, action func(context.Context, string) error) *playbackUseCase {
 	return &playbackUseCase{login: login, spotify: spotify, devices: devices, apps: apps, browser: browser, action: action}
 }
 
@@ -450,7 +444,7 @@ func (u *playbackUseCase) Run(ctx context.Context, _ PlaybackInput) (*PlaybackRe
 // Pause use case.
 type Pause struct{ inner *playbackUseCase }
 
-func NewPause(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browser BrowserLauncher) *Pause {
+func NewPause(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browser BrowserLauncher) *Pause {
 	return &Pause{inner: newPlaybackUseCase(login, spotify, devices, apps, browser, spotify.Pause)}
 }
 func (u *Pause) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, error) {
@@ -460,7 +454,7 @@ func (u *Pause) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, err
 // Resume use case.
 type Resume struct{ inner *playbackUseCase }
 
-func NewResume(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browser BrowserLauncher) *Resume {
+func NewResume(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browser BrowserLauncher) *Resume {
 	return &Resume{inner: newPlaybackUseCase(login, spotify, devices, apps, browser, spotify.Resume)}
 }
 func (u *Resume) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, error) {
@@ -470,7 +464,7 @@ func (u *Resume) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, er
 // Next use case.
 type Next struct{ inner *playbackUseCase }
 
-func NewNext(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browser BrowserLauncher) *Next {
+func NewNext(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browser BrowserLauncher) *Next {
 	return &Next{inner: newPlaybackUseCase(login, spotify, devices, apps, browser, spotify.Next)}
 }
 func (u *Next) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, error) {
@@ -480,7 +474,7 @@ func (u *Next) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, erro
 // Previous use case.
 type Previous struct{ inner *playbackUseCase }
 
-func NewPrevious(login *Login, spotify SpotifyClient, devices DeviceDetector, apps AppLauncher, browser BrowserLauncher) *Previous {
+func NewPrevious(login *Login, spotify SpotifyClient, devices DeviceDetector, apps Launcher, browser BrowserLauncher) *Previous {
 	return &Previous{inner: newPlaybackUseCase(login, spotify, devices, apps, browser, spotify.Previous)}
 }
 func (u *Previous) Run(ctx context.Context, in PlaybackInput) (*PlaybackResult, error) {

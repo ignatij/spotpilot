@@ -19,13 +19,13 @@ type deps struct {
 	loginPerformer app.LoginPerformer
 	spotify        app.SpotifyClient
 	devices        app.DeviceDetector
-	appLauncher    app.AppLauncher
+	appLauncher    app.Launcher
 	browser        app.BrowserLauncher
 }
 
 // buildDeps constructs and wires all runtime dependencies.
 // Heavy initialization is deferred to here so startup stays cheap.
-func buildDeps(cfg config.Config) (*deps, error) {
+func buildDeps(_ config.Config) (*deps, error) {
 	cs, err := auth.NewAutoStore()
 	if err != nil {
 		return nil, fmt.Errorf("initializing session store: %w", err)

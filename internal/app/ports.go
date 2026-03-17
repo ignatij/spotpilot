@@ -56,8 +56,8 @@ type DeviceDetector interface {
 	WaitForLocalDevice(ctx context.Context) (*domain.Device, error)
 }
 
-// AppLauncher is the consumer-owned port for launching local applications.
-type AppLauncher interface {
+// Launcher is the consumer-owned port for launching local applications.
+type Launcher interface {
 	// LaunchSpotify starts the local Spotify desktop application.
 	LaunchSpotify(ctx context.Context) error
 }

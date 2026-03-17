@@ -51,7 +51,7 @@ func marshalSession(sess *Session) ([]byte, error) {
 		ps.TokenExpiry = sess.TokenExpiry.UnixMilli()
 	}
 	for _, c := range sess.Cookies {
-		ps.Cookies = append(ps.Cookies, persistedCookie{Name: c.Name, Value: c.Value})
+		ps.Cookies = append(ps.Cookies, persistedCookie(c))
 	}
 	return json.Marshal(ps)
 }
@@ -69,7 +69,7 @@ func unmarshalSession(data []byte) (*Session, error) {
 		sess.TokenExpiry = time.UnixMilli(ps.TokenExpiry)
 	}
 	for _, c := range ps.Cookies {
-		sess.Cookies = append(sess.Cookies, Cookie{Name: c.Name, Value: c.Value})
+		sess.Cookies = append(sess.Cookies, Cookie(c))
 	}
 	return sess, nil
 }
@@ -85,10 +85,6 @@ func (s *FileStore) Load(_ context.Context) (*Session, error) {
 		return nil, fmt.Errorf("reading session file: %w", err)
 	}
 
-	var ps persistedSession
-	if err := json.Unmarshal(data, &ps); err != nil {
-		return nil, fmt.Errorf("parsing session file: %w", err)
-	}
 	sess, err := unmarshalSession(data)
 	if err != nil {
 		return nil, fmt.Errorf("parsing session file: %w", err)
@@ -102,17 +98,7 @@ func (s *FileStore) Save(_ context.Context, sess *Session) error {
 		return fmt.Errorf("creating session directory: %w", err)
 	}
 
-	ps := persistedSession{
-		AccessToken: sess.AccessToken,
-	}
-	if !sess.TokenExpiry.IsZero() {
-		ps.TokenExpiry = sess.TokenExpiry.UnixMilli()
-	}
-	for _, c := range sess.Cookies {
-		ps.Cookies = append(ps.Cookies, persistedCookie{Name: c.Name, Value: c.Value})
-	}
-
-	data, err := json.Marshal(ps)
+	data, err := marshalSession(sess)
 	if err != nil {
 		return fmt.Errorf("encoding session: %w", err)
 	}

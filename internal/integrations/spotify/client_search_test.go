@@ -43,6 +43,7 @@ func TestClientSearchPrefersRelevantTrackOverArtist(t *testing.T) {
 	}
 	if match == nil {
 		t.Fatal("expected match")
+		return
 	}
 	if match.Type != "track" {
 		t.Fatalf("expected track match, got %s", match.Type)

@@ -27,11 +27,7 @@ func newVersionCmd(info BuildInfo, flags *rootFlags) *cobra.Command {
 				Command: "version",
 				State:   output.StateOK,
 				Message: msg,
-				Result: versionResult{
-					Version:   info.Version,
-					Commit:    info.Commit,
-					BuildDate: info.BuildDate,
-				},
+				Result:  versionResult(info),
 			}
 			return r.Render(env)
 		},
