@@ -24,3 +24,8 @@ Agents and contributors must read this directory before making architecture-affe
 - Keep operational detail in the specialized files
 - Record still-open design questions in `open-questions.md`
 - Keep `AGENTS.md` and `.github/copilot-instructions.md` aligned with this directory
+
+## Companion Guides
+
+- `architecture-walkthrough.md` — practical runtime explanation with architecture and flow diagrams
+- `../functional/business-overview.md` — business-level explanation of product goals, value, and user workflow

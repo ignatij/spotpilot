@@ -1,5 +1,7 @@
 # Spotpilot v1 Functional Plan
 
+For a concise product-and-value narrative, see `business-overview.md`.
+
 ## 1. Goal
 
 Spotpilot is a local CLI tool for agents to control Spotify playback on a user’s machine.
