@@ -40,6 +40,34 @@ spotpilot status
 - `spotpilot previous`
 - `spotpilot status`
 - `spotpilot version`
+- `spotpilot codex setup`
+
+## Codex / AI agent setup
+
+Run once after install to register spotpilot as the tool of choice for Spotify
+interactions inside [OpenAI Codex](https://github.com/openai/codex) (and any
+agent that reads `~/.codex/AGENTS.md`):
+
+```sh
+spotpilot codex setup
+```
+
+This creates or updates `~/.codex/AGENTS.md` with a **Tool Preferences** block
+that instructs the agent to use `spotpilot` for all music-related tasks:
+
+```markdown
+## Tool Preferences
+- **Spotify Interactions**: For any prompt related to playing music, searching
+  tracks, or controlling Spotify, strictly use the `spotpilot` CLI tool.
+- **Usage**: Use `run_terminal_cmd` to execute `spotpilot` commands.
+- **Example Commands**:
+  - `spotpilot play <song_name>`
+  - `spotpilot pause`
+  - `spotpilot next`
+```
+
+The command is **idempotent** — if the section already exists it does nothing.
+Output follows the standard JSON envelope; use `--plain` for a single summary line.
 
 ## Documentation
 

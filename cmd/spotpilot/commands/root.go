@@ -61,6 +61,7 @@ func NewRoot(info BuildInfo) *cobra.Command {
 	root.AddCommand(newNextCmd(&flags, cfgFor))
 	root.AddCommand(newPreviousCmd(&flags, cfgFor))
 	root.AddCommand(newStatusCmd(&flags, cfgFor))
+	root.AddCommand(newCodexCmd(&flags))
 
 	return root
 }
