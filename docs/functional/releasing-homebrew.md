@@ -32,7 +32,7 @@ every time you cut a release.
 1. Go to [https://github.com/new](https://github.com/new).
 2. Set the repository name **exactly** to `homebrew-spotpilot`.
 3. Owner must be `ignatij` (matches `.goreleaser.yml`).
-4. Leave it public (Homebrew requires public taps for `brew install`).
+4. Leave it public (Homebrew installs require publicly reachable formula and release assets).
 5. Add a short description, for example: *Homebrew formula for spotpilot*.
 6. Do **not** tick "Add a README" — GoReleaser will create the formula file.
 7. Click **Create repository**.
@@ -141,6 +141,7 @@ brew upgrade ignatij/spotpilot/spotpilot
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| Download failed for `.../releases/download/.../spotpilot_darwin_arm64.tar.gz` | Main repo or release assets are not publicly accessible | Make `ignatij/spotpilot` public and ensure the release is published (not draft), then reinstall |
 | Release workflow fails with `401` pushing formula | Wrong token or missing secret | Re-check step 3 |
 | `brew install` says formula not found | Tap not added | Run `brew tap ignatij/spotpilot` first |
 | Binary architecture mismatch on Apple Silicon | Old `arch` setting | Ensure `.goreleaser.yml` includes `arm64` under `goarch` |

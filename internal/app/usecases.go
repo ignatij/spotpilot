@@ -79,7 +79,7 @@ func NewPlay(login *Login, spotify SpotifyClient, devices DeviceDetector, apps L
 // Run executes the play use case.
 func (u *Play) Run(ctx context.Context, in PlayInput) (*PlayResult, error) {
 	if in.Query == "" {
-		return nil, &appError{cat: catValidation, msg: "query is required"}
+		return u.resume(ctx)
 	}
 
 	// Ensure login.
@@ -278,6 +278,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (u *Play) resume(ctx context.Context) (*PlayResult, error) {
+	loginRes, err := u.login.Run(ctx, LoginInput{})
+	if err != nil {
+		return nil, err
+	}
+	device, err := u.resolveDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.spotify.Resume(ctx, device.ID); err != nil {
+		return nil, err
+	}
+	return &PlayResult{Device: device, LoggedIn: !loginRes.AlreadyLoggedIn}, nil
 }
 
 func (u *Play) refineMatchForPlay(ctx context.Context, query string, match *domain.MatchResult) *domain.MatchResult {

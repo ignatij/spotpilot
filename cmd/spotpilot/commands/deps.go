@@ -25,7 +25,7 @@ type deps struct {
 
 // buildDeps constructs and wires all runtime dependencies.
 // Heavy initialization is deferred to here so startup stays cheap.
-func buildDeps(_ config.Config) (*deps, error) {
+func buildDeps(cfg config.Config) (*deps, error) {
 	cs, err := auth.NewAutoStore()
 	if err != nil {
 		return nil, fmt.Errorf("initializing session store: %w", err)
@@ -68,6 +68,9 @@ func buildDeps(_ config.Config) (*deps, error) {
 	cookieTokenProvider := spotify.CookieTokenProvider{Source: cookieSource}
 
 	webClient := spotify.New(cookieTokenProvider.Token)
+	if cfg.Debug {
+		webClient.WithDebugWriter(os.Stderr)
+	}
 	connectClient, err := spotify.NewConnectClient(cookieSource, webClient)
 	if err != nil {
 		return nil, fmt.Errorf("initializing connect playback client: %w", err)

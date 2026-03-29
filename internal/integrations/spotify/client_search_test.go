@@ -9,7 +9,9 @@ import (
 	"time"
 )
 
-func TestClientSearchPrefersRelevantTrackOverArtist(t *testing.T) {
+// TestClientSearchReturnsFirstTrack verifies that the web client returns the first
+// track in the response (position 0), trusting Spotify's own relevance ranking.
+func TestClientSearchReturnsFirstTrack(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/search" {
 			t.Fatalf("unexpected path: %s", got)
@@ -37,7 +39,7 @@ func TestClientSearchPrefersRelevantTrackOverArtist(t *testing.T) {
 	})
 	client.baseURL = server.URL
 
-	match, err := client.Search(context.Background(), "Battery")
+	match, err := client.Search(context.Background(), "Enter Sandman")
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -48,10 +50,11 @@ func TestClientSearchPrefersRelevantTrackOverArtist(t *testing.T) {
 	if match.Type != "track" {
 		t.Fatalf("expected track match, got %s", match.Type)
 	}
-	if match.Track == nil || match.Track.URI != "spotify:track:battery" {
+	// Position 0 in the tracks list is the top hit — Enter Sandman.
+	if match.Track == nil || match.Track.URI != "spotify:track:enter-sandman" {
 		t.Fatalf("unexpected track match: %#v", match.Track)
 	}
-	if match.Track.Title != "Battery" {
+	if match.Track.Title != "Enter Sandman" {
 		t.Fatalf("unexpected title: %q", match.Track.Title)
 	}
 }

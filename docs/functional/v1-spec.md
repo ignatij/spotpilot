@@ -181,18 +181,52 @@ No use of:
 * personal library
 * historical listening preferences
 
+**Implementation — search path:**
+
+Spotpilot uses a `HybridClient` (`internal/integrations/spotify/connect.go`) that wraps
+two clients: a web `Client` and a `ConnectClient`. On every search it first tries the web
+`Client.Search` (`internal/integrations/spotify/client.go`), which calls the public
+`api.spotify.com/v1/search` endpoint using a Bearer token derived from the browser session
+cookies. If that call succeeds it returns immediately.
+
+If the web path fails (commonly HTTP 429 rate-limit), the `HybridClient` falls through to
+`ConnectClient.Search`. The connect client calls Spotify's **internal SearchView endpoint**:
+
+```
+GET https://spclient.wg.spotify.com/searchview/km/v4/search/{query}
+    ?entityVersion=2&limit=1&imageSize=small&country=from_token&locale=en
+```
+
+This endpoint is the same one the official Spotify web and desktop clients use for their
+search UI. It requires:
+
+* A Bearer `AccessToken` — obtained from the session cookies via
+  `connectSession.ensureTokenLocked` in `connect.go`.
+* A `ClientToken` — short-lived token obtained by posting client metadata to
+  `clienttoken.spotify.com/v1/clienttoken`, handled by
+  `connectSession.ensureClientTokenLocked`.
+
+Because both tokens come from the imported browser session, the SearchView endpoint is
+not subject to the same developer-tier rate limits as the public API.
+
 #### Matching policy
 
-Result resolution order is:
+Both search paths trust Spotify's own ranking directly — Spotpilot does not re-score or
+reorder results locally.
 
-1. track
-2. album
-3. artist
-4. not found
+* **Web path** (`matchResultFromSearchResponse` in `client.go`): the public API returns
+  items already sorted by Spotify's relevance. Spotpilot takes `tracks[0]` if present,
+  otherwise `albums[0]`, otherwise `artists[0]`.
 
-If multiple matches exist within a category:
+* **SearchView path** (`matchResultFromSearchviewPayload` in `connect.go`): the response
+  contains a `results.topHit.hits[0]` entry — a single item Spotify has ranked as the best
+  overall match. Spotpilot reads that URI and determines the result type from its prefix
+  (`spotify:track:`, `spotify:album:`, `spotify:artist:`). If `topHit` is absent or empty,
+  it falls back to scanning all URIs in the response in the same order.
 
-* Spotpilot selects the **top Spotify result automatically**
+The result type reported in the JSON output (`match_type`) reflects whatever Spotify ranked
+first. It is not forced into a track-first priority — if Spotify's top result for a query
+is an album or artist, that is what Spotpilot plays.
 
 No disambiguation or user-choice prompts in v1.
 
@@ -638,11 +672,11 @@ These are explicitly out of scope:
 
 ### Playback resolution
 
-* track -> album -> artist -> not found
+* `topHit` from Spotify's SearchView response (track, album, or artist — whatever Spotify ranked first)
 
 ### Match selection
 
-* top Spotify result automatically
+* top Spotify result automatically, driven by `topHit` in the SearchView payload
 
 ### Search scope
 

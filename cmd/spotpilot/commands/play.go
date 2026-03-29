@@ -21,9 +21,9 @@ type playResult struct {
 
 func newPlayCmd(flags *rootFlags, cfgFor func() (config.Config, error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "play <query>",
-		Short: "Search Spotify and play the top result",
-		Args:  cobra.ExactArgs(1),
+		Use:   "play [query]",
+		Short: "Search Spotify and play the top result, or resume if no query given",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := cfgFor()
 			if err != nil {
@@ -42,14 +42,25 @@ func newPlayCmd(flags *rootFlags, cfgFor func() (config.Config, error)) *cobra.C
 			loginUC := app.NewLogin(deps.store, deps.loginPerformer)
 			playUC := app.NewPlay(loginUC, deps.spotify, deps.devices, deps.appLauncher, deps.browser)
 
-			res, err := playUC.Run(ctx, app.PlayInput{Query: args[0]})
+			query := ""
+			if len(args) > 0 {
+				query = args[0]
+			}
+
+			res, err := playUC.Run(ctx, app.PlayInput{Query: query})
 			if err != nil {
 				return runErr(flags, "play", err)
 			}
 
 			r := renderer(flags)
-			pr := buildPlayResult(res.Match, args[0])
-			msg := buildPlayMessage(res.Match, args[0])
+			var pr playResult
+			var msg string
+			if res.Match != nil {
+				pr = buildPlayResult(res.Match, query)
+				msg = buildPlayMessage(res.Match, query)
+			} else {
+				msg = "Resumed"
+			}
 
 			return r.Render(output.Envelope{
 				OK:      true,

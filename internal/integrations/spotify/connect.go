@@ -48,7 +48,7 @@ type ConnectClient struct {
 	http    *http.Client
 	source  CookieSource
 	session *connectSession
-	hashes  *hashResolver
+	debug   debugLogger
 }
 
 type connectSession struct {
@@ -102,7 +102,7 @@ func NewConnectClient(source CookieSource, web *Client) (*ConnectClient, error) 
 	}
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	session := &connectSession{source: source, http: httpClient}
-	return &ConnectClient{web: web, http: httpClient, source: source, session: session, hashes: newHashResolver(httpClient)}, nil
+	return &ConnectClient{web: web, http: httpClient, source: source, session: session, debug: web.debug}, nil
 }
 
 func NewHybridClient(web *Client, connect *ConnectClient) *HybridClient {
@@ -110,15 +110,28 @@ func NewHybridClient(web *Client, connect *ConnectClient) *HybridClient {
 }
 
 func (c *HybridClient) Search(ctx context.Context, query string) (*domain.MatchResult, error) {
+	c.web.debug.printf("hybrid search start query=%q", query)
 	webMatch, webErr := c.web.Search(ctx, query)
 	if webErr == nil && webMatch != nil {
+		c.web.debug.printf("hybrid search using web result type=%s uri=%s", webMatch.Type, webMatch.PlaybackURI())
 		return webMatch, nil
+	}
+	if webErr != nil {
+		c.web.debug.printf("hybrid search web error for query=%q: %v", query, webErr)
+	} else {
+		c.web.debug.printf("hybrid search web returned no match for query=%q", query)
 	}
 
 	connectMatch, connectErr := c.connect.Search(ctx, query)
 	if connectErr == nil {
+		if connectMatch != nil {
+			c.web.debug.printf("hybrid search using connect result type=%s uri=%s", connectMatch.Type, connectMatch.PlaybackURI())
+		} else {
+			c.web.debug.printf("hybrid search connect returned nil match for query=%q", query)
+		}
 		return connectMatch, nil
 	}
+	c.web.debug.printf("hybrid search connect error for query=%q: %v", query, connectErr)
 
 	return nil, fmt.Errorf("spotify hybrid search: web=%v connect=%w", webErr, connectErr)
 }
@@ -212,153 +225,18 @@ func (c *HybridClient) ListDevices(ctx context.Context) ([]domain.Device, error)
 }
 
 func (c *ConnectClient) Search(ctx context.Context, query string) (*domain.MatchResult, error) {
-	searchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	payload, err := c.graphQL(searchCtx, "searchDesktop", map[string]any{
-		"searchTerm":                    query,
-		"offset":                        0,
-		"limit":                         searchResultLimit,
-		"numberOfTopResults":            5,
-		"includeAudiobooks":             true,
-		"includePreReleases":            true,
-		"includeLocalConcertsField":     false,
-		"includeArtistHasConcertsField": false,
-	})
-	if err == nil {
-		if match := matchResultFromSearchPayload(query, payload); match != nil {
-			return match, nil
-		}
-	}
-
+	c.debug.printf("connect search start query=%q", query)
+	match, err := c.searchViaSearchView(ctx, query)
 	if err != nil {
-		searchview, searchviewErr := c.searchViaSearchView(ctx, query)
-		if searchviewErr == nil {
-			return searchview, nil
-		}
-		fallback, fallbackErr := c.searchViaWebAPI(ctx, query)
-		if fallbackErr == nil {
-			return fallback, nil
-		}
-		return nil, fmt.Errorf("spotify connect search: graphQL=%v searchview=%v fallback=%w", err, searchviewErr, fallbackErr)
+		c.debug.printf("connect search searchview failed for query=%q: %v", query, err)
+		return nil, fmt.Errorf("spotify connect search: %w", err)
 	}
-	return nil, nil
-}
-
-func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables map[string]any) (map[string]any, error) {
-	if c.hashes == nil {
-		return nil, errors.New("connect hash resolver not initialized")
+	if match != nil {
+		c.debug.printf("connect search searchview matched type=%s uri=%s", match.Type, match.PlaybackURI())
+	} else {
+		c.debug.printf("connect search searchview returned nil match for query=%q", query)
 	}
-	auth, err := c.session.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	hash, err := c.hashes.Hash(ctx, operation)
-	if err != nil {
-		return nil, err
-	}
-
-	params := url.Values{}
-	params.Set("operationName", operation)
-	variablesJSON, err := json.Marshal(variables)
-	if err != nil {
-		return nil, err
-	}
-	extensionsJSON, err := json.Marshal(map[string]any{
-		"persistedQuery": map[string]any{
-			"version":    1,
-			"sha256Hash": hash,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	params.Set("variables", string(variablesJSON))
-	params.Set("extensions", string(extensionsJSON))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api-partner.spotify.com/pathfinder/v1/query?"+params.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	applyRequestHeaders(req, requestHeaders{
-		AccessToken:   auth.AccessToken,
-		ClientToken:   auth.ClientToken,
-		ClientVersion: auth.ClientVersion,
-		Accept:        "application/json",
-		Language:      "en-US,en;q=0.9",
-		AppPlatform:   defaultAppPlatform,
-	})
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, apiError(resp)
-	}
-
-	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	if err := pathfinderError(payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func pathfinderError(payload map[string]any) error {
-	errorsRaw, ok := payload["errors"].([]any)
-	if !ok || len(errorsRaw) == 0 {
-		return nil
-	}
-	for _, item := range errorsRaw {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if message, _ := entry["message"].(string); message != "" {
-			return errors.New(message)
-		}
-	}
-	return errors.New("pathfinder error")
-}
-
-func (c *ConnectClient) searchViaWebAPI(ctx context.Context, query string) (*domain.MatchResult, error) {
-	auth, err := c.session.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track,album,artist&limit=%d", encodeQuery(query), searchResultLimit), nil)
-	if err != nil {
-		return nil, fmt.Errorf("spotify search: %w", err)
-	}
-	applyRequestHeaders(req, requestHeaders{
-		AccessToken:   auth.AccessToken,
-		ClientToken:   auth.ClientToken,
-		ClientVersion: connectVersionFor(auth),
-		Accept:        "application/json",
-		Language:      "en-US,en;q=0.9",
-		AppPlatform:   defaultAppPlatform,
-	})
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("spotify search: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("spotify connect search: %w", apiError(resp))
-	}
-
-	var sr searchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
-		return nil, fmt.Errorf("decoding search response: %w", err)
-	}
-	return matchResultFromSearchResponse(query, sr), nil
+	return match, nil
 }
 
 func (c *ConnectClient) searchViaSearchView(ctx context.Context, query string) (*domain.MatchResult, error) {
@@ -401,58 +279,73 @@ func (c *ConnectClient) searchViaSearchView(ctx context.Context, query string) (
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("spotify searchview decode: %w", err)
 	}
+	c.debug.dumpJSON(fmt.Sprintf("searchview payload for query %q", query), payload)
 	return matchResultFromSearchviewPayload(payload), nil
 }
 
-func matchResultFromSearchPayload(query string, payload map[string]any) *domain.MatchResult {
-	type candidate struct {
-		score int
-		match *domain.MatchResult
-	}
-
-	queryIntent := searchIntent(query)
-	queryText := canonicalSearchQuery(query)
-	best := candidate{score: -1}
-
-	for idx, item := range searchItems(payload, [][]string{{"data", "searchV2", "tracksV2", "items"}}) {
-		match := &domain.MatchResult{Type: domain.MatchTypeTrack, Track: &domain.Track{URI: searchItemURI(item), Title: searchItemName(item), Artist: searchItemArtist(item), Album: searchItemAlbum(item)}}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeTrack, searchItemName(item), searchItemArtist(item), idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
-	}
-	for idx, item := range searchItems(payload, [][]string{{"data", "searchV2", "albumsV2", "items"}, {"data", "searchV2", "albums", "items"}}) {
-		match := &domain.MatchResult{Type: domain.MatchTypeAlbum, Album: &domain.Album{URI: searchItemURI(item), Name: searchItemName(item), Artist: searchItemArtist(item)}}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeAlbum, searchItemName(item), searchItemArtist(item), idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
-	}
-	for idx, item := range searchItems(payload, [][]string{{"data", "searchV2", "artists", "items"}}) {
-		match := &domain.MatchResult{Type: domain.MatchTypeArtist, Artist: &domain.Artist{URI: searchItemURI(item), Name: searchItemName(item)}}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeArtist, searchItemName(item), "", idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
-	}
-
-	return best.match
-}
-
 func matchResultFromSearchviewPayload(payload any) *domain.MatchResult {
+	if mapped, ok := payload.(map[string]any); ok {
+		if results, ok := mapped["results"].(map[string]any); ok {
+			if topHit, ok := results["topHit"].(map[string]any); ok {
+				if hits, ok := topHit["hits"].([]any); ok && len(hits) > 0 {
+					if hit, ok := hits[0].(map[string]any); ok {
+						if uri, _ := hit["uri"].(string); uri != "" {
+							return matchResultFromURI(uri, hit)
+						}
+					}
+				}
+			}
+		}
+	}
 	uris := make([]string, 0, 8)
 	collectSpotifyURIs(payload, &uris)
 	for _, uri := range uris {
-		switch {
-		case strings.HasPrefix(uri, "spotify:track:"):
-			return &domain.MatchResult{Type: domain.MatchTypeTrack, Track: &domain.Track{URI: uri}}
-		case strings.HasPrefix(uri, "spotify:album:"):
-			return &domain.MatchResult{Type: domain.MatchTypeAlbum, Album: &domain.Album{URI: uri}}
-		case strings.HasPrefix(uri, "spotify:artist:"):
-			return &domain.MatchResult{Type: domain.MatchTypeArtist, Artist: &domain.Artist{URI: uri}}
+		if result := matchResultFromURI(uri, nil); result != nil {
+			return result
 		}
 	}
 	return nil
+}
+
+func matchResultFromURI(uri string, hit map[string]any) *domain.MatchResult {
+	switch {
+	case strings.HasPrefix(uri, "spotify:track:"):
+		track := &domain.Track{URI: uri}
+		if hit != nil {
+			track.Title, _ = hit["name"].(string)
+			track.Artist = searchviewHitArtist(hit)
+			if album, ok := hit["album"].(map[string]any); ok {
+				track.Album, _ = album["name"].(string)
+			}
+		}
+		return &domain.MatchResult{Type: domain.MatchTypeTrack, Track: track}
+	case strings.HasPrefix(uri, "spotify:album:"):
+		album := &domain.Album{URI: uri}
+		if hit != nil {
+			album.Name, _ = hit["name"].(string)
+			album.Artist = searchviewHitArtist(hit)
+		}
+		return &domain.MatchResult{Type: domain.MatchTypeAlbum, Album: album}
+	case strings.HasPrefix(uri, "spotify:artist:"):
+		artist := &domain.Artist{URI: uri}
+		if hit != nil {
+			artist.Name, _ = hit["name"].(string)
+		}
+		return &domain.MatchResult{Type: domain.MatchTypeArtist, Artist: artist}
+	}
+	return nil
+}
+
+func searchviewHitArtist(hit map[string]any) string {
+	artists, ok := hit["artists"].([]any)
+	if !ok || len(artists) == 0 {
+		return ""
+	}
+	if artist, ok := artists[0].(map[string]any); ok {
+		name, _ := artist["name"].(string)
+		return name
+	}
+	return ""
 }
 
 func collectSpotifyURIs(value any, uris *[]string) {
@@ -470,91 +363,6 @@ func collectSpotifyURIs(value any, uris *[]string) {
 			*uris = append(*uris, typed)
 		}
 	}
-}
-
-func searchItems(payload map[string]any, paths [][]string) []map[string]any {
-	items := make([]map[string]any, 0, searchResultLimit)
-	for _, path := range paths {
-		raw, ok := nestedSlice(payload, path...)
-		if !ok {
-			continue
-		}
-		for _, value := range raw {
-			if item := unwrapSearchItem(value); item != nil {
-				items = append(items, item)
-			}
-		}
-	}
-	return items
-}
-
-func nestedSlice(payload map[string]any, path ...string) ([]any, bool) {
-	current := any(payload)
-	for _, segment := range path {
-		mapped, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		current, ok = mapped[segment]
-		if !ok {
-			return nil, false
-		}
-	}
-	items, ok := current.([]any)
-	return items, ok
-}
-
-func unwrapSearchItem(raw any) map[string]any {
-	mapped, ok := raw.(map[string]any)
-	if !ok {
-		return nil
-	}
-	for _, key := range []string{"item", "itemV2", "data", "track", "trackUnion", "album", "albumUnion", "artist", "artistUnion"} {
-		if nested, ok := mapped[key].(map[string]any); ok {
-			return unwrapSearchItem(nested)
-		}
-	}
-	return mapped
-}
-
-func searchItemURI(item map[string]any) string {
-	uri, _ := item["uri"].(string)
-	return uri
-}
-
-func searchItemName(item map[string]any) string {
-	name, _ := item["name"].(string)
-	return name
-}
-
-func searchItemAlbum(item map[string]any) string {
-	album, ok := item["album"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	name, _ := album["name"].(string)
-	return name
-}
-
-func searchItemArtist(item map[string]any) string {
-	artists, ok := item["artists"].([]any)
-	if ok && len(artists) > 0 {
-		if artist, ok := artists[0].(map[string]any); ok {
-			if name, _ := artist["name"].(string); name != "" {
-				return name
-			}
-		}
-	}
-	artistsMap, ok := item["artists"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	if items, ok := artistsMap["items"].([]any); ok && len(items) > 0 {
-		if artist, ok := unwrapSearchItem(items[0])["name"].(string); ok {
-			return artist
-		}
-	}
-	return ""
 }
 
 func (c *ConnectClient) Play(ctx context.Context, deviceID string, uri string) error {

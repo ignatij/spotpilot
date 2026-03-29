@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type Client struct {
 	http          *http.Client
 	baseURL       string
 	tokenProvider func(context.Context) (Token, error)
+	debug         debugLogger
 
 	mu        sync.Mutex
 	lastToken Token
@@ -34,6 +36,11 @@ func New(tokenProvider func(context.Context) (Token, error)) *Client {
 		baseURL:       "https://api.spotify.com/v1",
 		tokenProvider: tokenProvider,
 	}
+}
+
+func (c *Client) WithDebugWriter(w io.Writer) *Client {
+	c.debug = debugLogger{w: w}
+	return c
 }
 
 func (c *Client) authHeader(ctx context.Context) (string, error) {
@@ -132,192 +139,44 @@ func (c *Client) Search(ctx context.Context, query string) (*domain.MatchResult,
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
 		return nil, fmt.Errorf("decoding search response: %w", err)
 	}
+	c.debug.dumpJSON(fmt.Sprintf("web search response for query %q", query), sr)
 
 	match := matchResultFromSearchResponse(query, sr)
 	if match == nil {
+		c.debug.printf("web search produced no match for query=%q", query)
 		return nil, nil
 	}
+	c.debug.printf("web search matched type=%s uri=%s for query=%q", match.Type, match.PlaybackURI(), query)
 	return c.hydrateMatch(ctx, match), nil
 }
 
-func matchResultFromSearchResponse(query string, sr searchResponse) *domain.MatchResult {
-	return bestSearchMatch(query, sr.Tracks.Items, sr.Albums.Items, sr.Artists.Items)
-}
-
-func bestSearchMatch(query string, tracks []trackItem, albums []albumItem, artists []artistItem) *domain.MatchResult {
-	type candidate struct {
-		score int
-		match *domain.MatchResult
-	}
-
-	queryIntent := searchIntent(query)
-	queryText := canonicalSearchQuery(query)
-	best := candidate{score: -1}
-
-	for idx, item := range tracks {
+func matchResultFromSearchResponse(_ string, sr searchResponse) *domain.MatchResult {
+	// Trust Spotify's ranking: take the first result across tracks, albums, artists.
+	// The public API returns items in relevance order; position 0 is the top hit.
+	if len(sr.Tracks.Items) > 0 {
+		item := sr.Tracks.Items[0]
 		artist := firstArtistItemName(item.Artists)
-		match := &domain.MatchResult{
+		return &domain.MatchResult{
 			Type:  domain.MatchTypeTrack,
 			Track: &domain.Track{URI: item.URI, Title: item.Name, Artist: artist, Album: item.Album.Name},
 		}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeTrack, item.Name, artist, idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
 	}
-
-	for idx, item := range albums {
+	if len(sr.Albums.Items) > 0 {
+		item := sr.Albums.Items[0]
 		artist := firstArtistItemName(item.Artists)
-		match := &domain.MatchResult{
+		return &domain.MatchResult{
 			Type:  domain.MatchTypeAlbum,
 			Album: &domain.Album{URI: item.URI, Name: item.Name, Artist: artist},
 		}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeAlbum, item.Name, artist, idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
 	}
-
-	for idx, item := range artists {
-		match := &domain.MatchResult{
+	if len(sr.Artists.Items) > 0 {
+		item := sr.Artists.Items[0]
+		return &domain.MatchResult{
 			Type:   domain.MatchTypeArtist,
 			Artist: &domain.Artist{URI: item.URI, Name: item.Name},
 		}
-		score := searchCandidateScore(queryText, queryIntent, domain.MatchTypeArtist, item.Name, "", idx)
-		if score > best.score {
-			best = candidate{score: score, match: match}
-		}
 	}
-
-	return best.match
-}
-
-func searchCandidateScore(queryText string, intent domain.MatchType, kind domain.MatchType, name string, secondary string, index int) int {
-	nameScore := matchTextScore(queryText, name)
-	secondaryScore := matchSecondaryScore(queryText, secondary)
-	typeScore := 0
-	if kind == domain.MatchTypeTrack {
-		typeScore = 150
-	} else if kind == domain.MatchTypeAlbum {
-		typeScore = 75
-	}
-	intentScore := 0
-	if intent != "" && intent == kind {
-		intentScore = 200
-	}
-	return nameScore + secondaryScore + typeScore - index + intentScore
-}
-
-func matchTextScore(query string, value string) int {
-	query = normalizeSearchText(query)
-	value = normalizeSearchText(value)
-	if query == "" || value == "" {
-		return 0
-	}
-	if value == query {
-		return 1000
-	}
-	if strings.HasPrefix(value, query+" ") || strings.HasPrefix(value, query) {
-		return 850
-	}
-	if strings.Contains(value, query) {
-		return 700
-	}
-	queryTokens := strings.Fields(query)
-	valueTokens := strings.Fields(value)
-	overlap := overlappingTokenCount(queryTokens, valueTokens)
-	if overlap == len(queryTokens) && overlap > 0 {
-		return 500
-	}
-	if overlap > 0 {
-		return overlap * 100
-	}
-	return 0
-}
-
-func matchSecondaryScore(query string, value string) int {
-	query = normalizeSearchText(query)
-	value = normalizeSearchText(value)
-	if query == "" || value == "" {
-		return 0
-	}
-	if value == query {
-		return 60
-	}
-	if strings.Contains(value, query) {
-		return 40
-	}
-	queryTokens := strings.Fields(query)
-	valueTokens := strings.Fields(value)
-	overlap := overlappingTokenCount(queryTokens, valueTokens)
-	if overlap > 0 {
-		return overlap * 20
-	}
-	return 0
-}
-
-func overlappingTokenCount(left []string, right []string) int {
-	if len(left) == 0 || len(right) == 0 {
-		return 0
-	}
-	seen := make(map[string]struct{}, len(right))
-	for _, token := range right {
-		seen[token] = struct{}{}
-	}
-	count := 0
-	for _, token := range left {
-		if _, ok := seen[token]; ok {
-			count++
-		}
-	}
-	return count
-}
-
-func searchIntent(query string) domain.MatchType {
-	trimmed := strings.TrimSpace(strings.ToLower(query))
-	switch {
-	case strings.HasPrefix(trimmed, "track:"), strings.HasPrefix(trimmed, "track "), strings.HasSuffix(trimmed, " track"), strings.HasSuffix(trimmed, " song"):
-		return domain.MatchTypeTrack
-	case strings.HasPrefix(trimmed, "album:"), strings.HasPrefix(trimmed, "album "), strings.HasSuffix(trimmed, " album"):
-		return domain.MatchTypeAlbum
-	case strings.HasPrefix(trimmed, "artist:"), strings.HasPrefix(trimmed, "artist "), strings.HasSuffix(trimmed, " artist"):
-		return domain.MatchTypeArtist
-	default:
-		return ""
-	}
-}
-
-func canonicalSearchQuery(query string) string {
-	trimmed := strings.TrimSpace(query)
-	lower := strings.ToLower(trimmed)
-	for _, prefix := range []string{"track:", "track ", "song ", "album:", "album ", "artist:", "artist "} {
-		if strings.HasPrefix(lower, prefix) {
-			return strings.TrimSpace(trimmed[len(prefix):])
-		}
-	}
-	for _, suffix := range []string{" track", " song", " album", " artist"} {
-		if strings.HasSuffix(lower, suffix) {
-			return strings.TrimSpace(trimmed[:len(trimmed)-len(suffix)])
-		}
-	}
-	return trimmed
-}
-
-func normalizeSearchText(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= '0' && r <= '9':
-			return r
-		case r == ' ':
-			return r
-		default:
-			return ' '
-		}
-	}, value)
-	return strings.Join(strings.Fields(value), " ")
+	return nil
 }
 
 func firstArtistItemName(artists []artistItem) string {

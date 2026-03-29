@@ -125,7 +125,7 @@ func TestLogin_NoSession_CallsPerformer(t *testing.T) {
 	}
 }
 
-func TestPlay_EmptyQuery_ValidationError(t *testing.T) {
+func TestPlay_EmptyQuery_Resumes(t *testing.T) {
 	store := &fakeStore{session: &app.Session{}}
 	performer := &fakeLoginPerformer{}
 	loginUC := app.NewLogin(store, performer)
@@ -133,9 +133,15 @@ func TestPlay_EmptyQuery_ValidationError(t *testing.T) {
 	devices := &fakeDeviceDetector{device: &domain.Device{ID: "d1", Type: "Computer"}}
 
 	uc := app.NewPlay(loginUC, spotifyClient, devices, &fakeAppLauncher{}, &fakeBrowserLauncher{})
-	_, err := uc.Run(context.Background(), app.PlayInput{Query: ""})
-	if err == nil {
-		t.Fatal("expected validation error for empty query")
+	res, err := uc.Run(context.Background(), app.PlayInput{Query: ""})
+	if err != nil {
+		t.Fatalf("unexpected error on empty query resume: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected result")
+	}
+	if res.Match != nil {
+		t.Errorf("expected nil match for resume, got %+v", res.Match)
 	}
 }
 
