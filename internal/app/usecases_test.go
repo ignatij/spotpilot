@@ -139,6 +139,7 @@ func TestPlay_EmptyQuery_Resumes(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatal("expected result")
+		return
 	}
 	if res.Match != nil {
 		t.Errorf("expected nil match for resume, got %+v", res.Match)
