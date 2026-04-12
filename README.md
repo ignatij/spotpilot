@@ -41,6 +41,7 @@ spotpilot status
 - `spotpilot status`
 - `spotpilot version`
 - `spotpilot codex setup`
+- `spotpilot copilot setup`
 
 ## Codex / AI agent setup
 
@@ -69,6 +70,19 @@ that instructs the agent to use `spotpilot` for all music-related tasks:
 The command is **idempotent** — if the section already exists it does nothing.
 Output follows the standard JSON envelope; use `--plain` for a single summary line.
 
+## Copilot setup
+
+Run once after install to register spotpilot as the tool of choice for Spotify
+interactions inside GitHub Copilot CLI:
+
+```sh
+spotpilot copilot setup
+```
+
+This creates or updates `~/.copilot/copilot-instructions.md` with a
+spotpilot-specific **Tool Preferences** block. The command is **idempotent** —
+if the spotpilot instructions are already present it does nothing.
+
 ## Documentation
 
 ### Functional docs
@@ -77,6 +91,7 @@ Output follows the standard JSON envelope; use `--plain` for a single summary li
 - [Business overview](docs/functional/business-overview.md)
 - [Homebrew release guide](docs/functional/releasing-homebrew.md)
 - [Codex integration guide](docs/functional/codex-integration.md)
+- [Copilot integration guide](docs/functional/copilot-integration.md)
 
 ### Technical docs
 
